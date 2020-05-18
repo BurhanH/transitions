@@ -3,6 +3,9 @@ from transitions import Machine
 
 class Stuff(object):
 
+    is_false = False
+    is_True = True
+
     def __init__(self, states=None, machine_cls=Machine, extra_kwargs={}):
 
         self.state = None
@@ -78,6 +81,10 @@ class Stuff(object):
     def on_enter_F(self):
         self.message = "I am F!"
 
+    @property
+    def property_that_fails(self):
+        return self.is_false
+
 
 class InheritedStuff(Machine):
 
@@ -96,7 +103,7 @@ class DummyModel(object):
     pass
 
 
-class TestContext(object):
+class SomeContext(object):
     def __init__(self, event_list):
         self._event_list = event_list
 

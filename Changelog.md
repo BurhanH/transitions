@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.8.1 (April 2020)
+
+Release 0.8.1 is a minor release of HSM improvements and bugfixes in the diagram and async extension
+
+- Feature: Introduced experimental `HierarchicalAsync(Graph)Machine`
+- Feature #405: Support for nested Enums in `HierarchicalMachine` (thanks @thedrow)
+- Bugfix #400: Fix style initialization when initial state is an `Enum` (thanks @kbinpgh)
+- Bugfix #403: AsyncMachine.dispatch now returns a boolean as expected (thanks @thedrow)
+- Bugfix #413: Improve diagram output for `HierarchicalMachine` (thanks @xiaohuihui1024)
+- Increased coverage (thanks @thedrow)
+- Introduced `xdist` for parallel testing with `pytest` (thanks @thedrow)
+
+## 0.8.0 (March 2020)
+
+Release 0.8.0 is a major release and introduces asyncio support for Python 3.7+, parallel state support and some bugfixes
+
+- Feature: `HierarchicalMachine` has been rewritten to support parallel states. Please have a look at the ReadMe.md to check what has changed.
+  + The previous version can be found in `transitions.extensions.nesting_legacy` for now
+- Feature: Introduced `AsyncMachine` (see discussion #259); note that async HSMs are not yet supported
+- Feature #390: String callbacks can now point to properties and attributes (thanks @jsenecal)
+- Bugfix: Auto transitions are added multiple times when add_states is called more than once
+- Bugfix: Convert state._name from `Enum` into strings in `MarkupMachine` when necessary
+- Bugfix #392: Allow `Machine.add_ordered_transitions` to be called without the initial state (thanks @mkaranki and @facundofc)
+- `GraphMachine` now attempts to fall back to `graphviz` when importing `pygraphviz` fails
+- Not implemented/tested so far (contributions are welcome!):
+  + Proper Graphviz support of parallel states
+  + AsyncHierachicalMachine 
+
+## 0.7.2 (January 2020)
+
+Release 0.7.2 is a minor release and contains bugfixes and and a new feature:
+
+- Bugfix #386: Fix transitions for enums with str behavior (thanks @artofhuman)
+- Bugfix #378: Don't mask away KeyError when executing a transition (thanks @facundofc)
+- Feature #387: Add support for dynamic model state attribute (thanks @v1k45)
+
+## 0.7.1 (September 2019)
+
+Release 0.7.1 is a minor release and contains several documentation improvements and a new feature:
+
+- Feature #334: Added Enum (Python 3.4+: `enum` Python 2.7: `enum34`) support (thanks @artofhuman and @justinttl)
+- Replaced test framework `nosetests` with `pytest` (thanks @artofhuman)
+- Extended `add_ordered_transitions` documentation in `Readme.md`
+- Collected code snippets from earlier discussions in `examples/Frequently asked questions.ipynb`
+- Improved stripping of `long_description` in `setup.py` (thanks @artofhuman) 
+
+## 0.7.0 (August 2019)
+
+Release 0.7.0 is a major release with fundamental changes to the diagram extension. It also introduces an intermediate `MarkupMachine` which can be used to transfer and (re-)initialize machine configurations.
+
+- Feature #263: `MarkupMachine` can be used to retrieve a Machine's dictionary representation
+  - `GraphMachine` uses this representation for Graphs now and does not rely on `Machine` attributes any longer
+- Feature: The default value of `State.ignore_invalid_triggers` changed to `None`. If it is not explicitly set, the `Machine`'s value is used instead.
+- Feature #325: transitions now supports `pygraphviz` and `graphviz` for the creation of diagrams. Currently, `GraphMachine` will check for `pygraphviz` first and fall back to `graphviz`. To use `graphviz` directly pass `use_pygraphiv=False` to the constructor of `GraphMachine`
+- Diagram style has been overhauled. Have a look at `GraphMachine`'s attributes `machine_attributes` and `style_attributes` to adjust it to your needs.
+- Feature #305: Timeouts and other features are now marked in the graphs
+- Bugfix #343: `get_graph` was not assigned to models added during machine runtime
+
 ## 0.6.9 (October 2018)
 
 Release 0.6.9 is a minor release and contains two bugfixes:

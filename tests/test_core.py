@@ -3,7 +3,6 @@ try:
 except ImportError:
     pass
 
-import warnings
 import sys
 
 from .utils import InheritedStuff
@@ -32,6 +31,7 @@ class TestTransitions(TestCase):
 
     def setUp(self):
         self.stuff = Stuff()
+        self.machine_cls = Machine
 
     def tearDown(self):
         pass
@@ -52,7 +52,7 @@ class TestTransitions(TestCase):
              }
         ]
         s = Stuff()
-        m = Machine(model=s, states=states, transitions=transitions, initial='State2')
+        m = s.machine_cls(model=s, states=states, transitions=transitions, initial='State2')
         s.advance()
         self.assertEqual(s.message, 'Hello World!')
 
@@ -70,11 +70,11 @@ class TestTransitions(TestCase):
             {'trigger': 'run', 'source': 'B', 'dest': 'C'},
             {'trigger': 'sprint', 'source': 'C', 'dest': 'D'}
         ]
-        m = Machine(states=states, transitions=transitions, initial='A')
+        m = self.stuff.machine_cls(states=states, transitions=transitions, initial='A')
         self.assertEqual(m.initial, 'A')
-        m = Machine(states=states, transitions=transitions, initial='C')
+        m = self.stuff.machine_cls(states=states, transitions=transitions, initial='C')
         self.assertEqual(m.initial, 'C')
-        m = Machine(states=states, transitions=transitions)
+        m = self.stuff.machine_cls(states=states, transitions=transitions)
         self.assertEqual(m.initial, 'initial')
 
     def test_transition_definitions(self):
@@ -98,6 +98,14 @@ class TestTransitions(TestCase):
         m.to_C()
         m.sprint()
         self.assertEqual(m.state, 'D')
+
+    def test_add_states(self):
+        s = self.stuff
+        s.machine.add_state('X')
+        s.machine.add_state('Y')
+        s.machine.add_state('Z')
+        event = s.machine.events['to_{0}'.format(s.state)]
+        self.assertEqual(1, len(event.transitions['X']))
 
     def test_transitioning(self):
         s = self.stuff
@@ -140,6 +148,14 @@ class TestTransitions(TestCase):
         self.assertEqual(s.state, 'C')
         s.advance()
         self.assertEqual(s.state, 'C')
+
+    def test_uncallable_callbacks(self):
+        s = self.stuff
+        s.machine.add_transition('advance', 'A', 'B', conditions=['property_that_fails', 'is_false'])
+        # make sure parameters passed by trigger events can be handled
+        s.machine.add_transition('advance', 'A', 'C', before=['property_that_fails', 'is_false'])
+        s.advance(level='MaximumSpeed')
+        self.assertTrue(s.is_C())
 
     def test_conditions_with_partial(self):
         def check(result):
@@ -375,6 +391,17 @@ class TestTransitions(TestCase):
         m.next_state()
         self.assertEqual(m.state, 'beginning')
 
+        # Partial state machine without the initial state
+        m = Machine('self', states, initial='beginning')
+        m.add_ordered_transitions(['middle', 'end'])
+        self.assertEqual(m.state, 'beginning')
+        with self.assertRaises(MachineError):
+            m.next_state()
+        m.to_middle()
+        for s in ('end', 'middle', 'end'):
+            m.next_state()
+            self.assertEqual(m.state, s)
+
     def test_ordered_transition_error(self):
         m = Machine(states=['A'], initial='A')
         with self.assertRaises(ValueError):
@@ -394,11 +421,15 @@ class TestTransitions(TestCase):
                      initial='B')
         with self.assertRaises(MachineError):
             m1.a_to_b()
+        # Set default value on machine level
+        m2 = Machine('self', states=[a_state, b_state], transitions=transitions,
+                     initial='B', ignore_invalid_triggers=True)
+        m2.a_to_b()
         # Exception is suppressed, so this passes
         b_state = State('B', ignore_invalid_triggers=True)
-        m2 = Machine('self', states=[a_state, b_state], transitions=transitions,
+        m3 = Machine('self', states=[a_state, b_state], transitions=transitions,
                      initial='B')
-        m2.a_to_b()
+        m3.a_to_b()
         # Set for some states but not others
         new_states = ['C', 'D']
         m1.add_states(new_states, ignore_invalid_triggers=True)
@@ -407,9 +438,9 @@ class TestTransitions(TestCase):
         m1.to_B()
         with self.assertRaises(MachineError):
             m1.a_to_b()
-        # Set at machine level
+        # State value overrides machine behaviour
         m3 = Machine('self', states=[a_state, b_state], transitions=transitions,
-                     initial='B', ignore_invalid_triggers=True)
+                     initial='B', ignore_invalid_triggers=False)
         m3.a_to_b()
 
     def test_string_callbacks(self):
@@ -589,7 +620,7 @@ class TestTransitions(TestCase):
             m.do(machine=m)
 
     def test___getattr___and_identify_callback(self):
-        m = Machine(Stuff(), states=['A', 'B', 'C'], initial='A')
+        m = self.machine_cls(Stuff(), states=['A', 'B', 'C'], initial='A')
         m.add_transition('move', 'A', 'B')
         m.add_transition('move', 'B', 'C')
 
@@ -713,7 +744,7 @@ class TestTransitions(TestCase):
 
         # An invalid transition shouldn't execute the callback
         with self.assertRaises(MachineError):
-                m.model.on_exit_A()
+            m.model.on_exit_A()
 
     def test_process_trigger(self):
         m = Machine(states=['raw', 'processed'], initial='raw')
@@ -771,6 +802,13 @@ class TestTransitions(TestCase):
         model = Model()
         m = Machine(model=model)
         self.assertEqual(model.trigger(5), 5)
+
+        def raise_key_error():
+            raise KeyError
+
+        self.stuff.machine.add_transition('do_raises_keyerror', '*', 'C', before=raise_key_error)
+        with self.assertRaises(KeyError):
+            self.stuff.trigger('do_raises_keyerror')
 
     def test_get_triggers(self):
         states = ['A', 'B', 'C']
@@ -1007,19 +1045,67 @@ class TestTransitions(TestCase):
         self.assertEqual(m.model.state, 'A')
         self.assertEqual(m.model.level, 2)
 
+    def test_dynamic_model_state_attribute(self):
+        class Model:
+            def __init__(self):
+                self.status = None
+                self.state = 'some_value'
+
+        m = Machine(Model(), states=['A', 'B'], initial='A', model_attribute='status')
+        self.assertEqual(m.model.status, 'A')
+        self.assertEqual(m.model.state, 'some_value')
+
+        m.add_transition('move', 'A', 'B')
+        m.model.move()
+
+        self.assertEqual(m.model.status, 'B')
+        self.assertEqual(m.model.state, 'some_value')
+
+    def test_multiple_machines_per_model(self):
+        class Model:
+            def __init__(self):
+                self.state_a = None
+                self.state_b = None
+
+        instance = Model()
+        machine_a = Machine(instance, states=['A', 'B'], initial='A', model_attribute='state_a')
+        machine_a.add_transition('melt', 'A', 'B')
+        machine_b = Machine(instance, states=['A', 'B'], initial='B', model_attribute='state_b')
+        machine_b.add_transition('freeze', 'B', 'A')
+
+        self.assertEqual(instance.state_a, 'A')
+        self.assertEqual(instance.state_b, 'B')
+
+        instance.melt()
+        self.assertEqual(instance.state_a, 'B')
+        self.assertEqual(instance.state_b, 'B')
+
+        instance.freeze()
+        self.assertEqual(instance.state_b, 'A')
+        self.assertEqual(instance.state_a, 'B')
+
+    def test_initial_not_registered(self):
+        m1 = self.machine_cls(states=['A', 'B'], initial=self.machine_cls.state_cls('C'))
+        self.assertTrue(m1.is_C())
+        self.assertTrue('C' in m1.states)
+
+    def test_trigger_name_cannot_be_equal_to_model_attribute(self):
+        m = self.machine_cls(states=['A', 'B'])
+
+        with self.assertRaises(ValueError):
+            m.add_transition(m.model_attribute, "A", "B")
+
 
 class TestWarnings(TestCase):
-
     def test_warning(self):
         import sys
         # does not work with python 3.3. However, the warning is shown when Machine is initialized manually.
         if (3, 3) <= sys.version_info < (3, 4):
             return
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.filterwarnings(action='default', message=r"Starting from transitions version 0\.6\.0 .*")
-            m = Machine(None)
-            m = Machine(add_self=False)
-            self.assertEqual(len(w), 1)
-            for warn in w:
-                self.assertEqual(warn.category, DeprecationWarning)
+        # with warnings.catch_warnings(record=True) as w:
+        #     warnings.filterwarnings(action='default', message=r".*transitions version.*")
+        #     m = Machine(None)
+        #     self.assertEqual(len(w), 1)
+        #     for warn in w:
+        #         self.assertEqual(warn.category, DeprecationWarning)

@@ -1,14 +1,14 @@
 # <a name="transitions-module"></a> transitions
-[![Version](https://img.shields.io/badge/version-v0.6.10-orange.svg)](https://github.com/pytransitions/transitions)
+[![Version](https://img.shields.io/badge/version-v0.8.1-orange.svg)](https://github.com/pytransitions/transitions)
 [![Build Status](https://travis-ci.org/pytransitions/transitions.svg?branch=master)](https://travis-ci.org/pytransitions/transitions)
 [![Coverage Status](https://coveralls.io/repos/pytransitions/transitions/badge.svg?branch=master&service=github)](https://coveralls.io/github/pytransitions/transitions?branch=master)
-[![Pylint](https://img.shields.io/badge/pylint-9.71%2F10-green.svg)](https://github.com/pytransitions/transitions)
 [![PyPi](https://img.shields.io/pypi/v/transitions.svg)](https://pypi.org/project/transitions)
-[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.6.9.svg)](https://github.com/pytransitions/transitions/compare/0.6.9...master)
+[![GitHub commits](https://img.shields.io/github/commits-since/pytransitions/transitions/0.8.0.svg)](https://github.com/pytransitions/transitions/compare/0.8.0...master)
 [![License](https://img.shields.io/github/license/pytransitions/transitions.svg)](LICENSE)
+<!-- [![Pylint](https://img.shields.io/badge/pylint-9.71%2F10-green.svg)](https://github.com/pytransitions/transitions) -->
 <!--[![Name](Image)](Link)-->
 
-A lightweight, object-oriented state machine implementation in Python. Compatible with Python 2.7+ and 3.0+.
+A lightweight, object-oriented state machine implementation in Python with many extensions. Compatible with Python 2.7+ and 3.0+.
 
 ## Installation
 
@@ -26,6 +26,7 @@ A lightweight, object-oriented state machine implementation in Python. Compatibl
     - [States](#states)
         - [Callbacks](#state-callbacks)
         - [Checking state](#checking-state)
+        - [Enumerations](#enum-state)
     - [Transitions](#transitions)
         - [Automatic transitions](#automatic-transitions-for-all-states)
         - [Transitioning from multiple states](#transitioning-from-multiple-states)
@@ -35,7 +36,8 @@ A lightweight, object-oriented state machine implementation in Python. Compatibl
         - [Queued transitions](#queued-transitions)
         - [Conditional transitions](#conditional-transitions)
         - [Callbacks](#transition-callbacks)
-    - [Callback resolution and execution order](#execution-order)
+    - [Callable resolution](#resolution)
+    - [Callback execution order](#execution-order)
     - [Passing data](#passing-data)
     - [Alternative initialization patterns](#alternative-initialization-patterns)
     - [Logging](#logging)
@@ -44,7 +46,9 @@ A lightweight, object-oriented state machine implementation in Python. Compatibl
         - [Diagrams](#diagrams)
         - [Hierarchical State Machine](#hsm)
         - [Threading](#threading)
+        - [Async](#async)
         - [State features](#state-features)
+        - [Django](#django-support)
     - [Bug reports etc.](#bug-reports)
 
 
@@ -112,6 +116,7 @@ class NarcolepticSuperhero(object):
         """ Dear Diary, today I saved Mr. Whiskers. Again. """
         self.kittens_rescued += 1
 
+    @property
     def is_exhausted(self):
         """ Basically a coin toss. """
         return random.random() < 0.5
@@ -191,7 +196,7 @@ lump.state
 >>> 'solid'
 ```
 
-I say “minimal”, because while this state machine is technically operational, it doesn't actually _do_ anything. It starts in the `'solid'` state, but won't ever move into another state, because no transitions are defined... yet!
+I say "minimal", because while this state machine is technically operational, it doesn't actually _do_ anything. It starts in the `'solid'` state, but won't ever move into another state, because no transitions are defined... yet!
 
 Let's try again.
 
@@ -241,6 +246,9 @@ You can initialize and modify States in a number of ways. Specifically, you can:
 The following snippets illustrate several ways to achieve the same goal:
 
 ```python
+# import Machine and State class
+from transitions import State
+
 # Create a list of 3 states to pass to the Machine
 # initializer. We can mix types; in this case, we
 # pass one State, one string, and one dict.
@@ -259,7 +267,6 @@ solid = State('solid')
 liquid = State('liquid')
 gas = State('gas')
 machine.add_states([solid, liquid, gas])
-
 ```
 
 States are initialized *once* when added to the machine and will persist until they are removed from it. In other words: if you alter the attributes of a state object, this change will NOT be reset the next time you enter that state. Have a look at how to [extend state features](#state-features) in case you require some other behaviour.
@@ -317,7 +324,8 @@ machine = Machine(lump, states=['A', 'B', 'C'])
 
 Now, any time `lump` transitions to state `A`, the `on_enter_A()` method defined in the `Matter` class will fire.
 
-#### Checking state
+#### <a name="checking-state"></a>Checking state
+
 You can always check the current state of the model by either:
 
 - inspecting the `.state` attribute, or
@@ -335,6 +343,49 @@ lump.is_solid()
 machine.get_state(lump.state).name
 >>> 'solid'
 ```
+
+If you'd like you track it using a different attribute, you could do that using the `model_attribute` argument while initializing the `Machine`.
+
+```python
+lump = Matter()
+machine = Machine(lump, states=['solid', 'liquid', 'gas'],  model_attribute='matter_state', initial='solid')
+lump.matter_state
+>>> 'solid'
+```
+
+#### <a name="enum-state"></a>Enumerations
+
+So far we have seen how we can give state names and use these names to work with our state machine.
+If you favour stricter typing and more IDE code completion (or you just can't type 'sesquipedalophobia' any longer because the word scares you) using [Enumerations](https://docs.python.org/3/library/enum.html) might be what you are looking for:
+
+```python
+import enum  # Python 2.7 users need to have 'enum34' installed
+from transitions import Machine
+
+class States(enum.Enum):
+    ERROR = 0
+    RED = 1
+    YELLOW = 2
+    GREEN = 3
+
+transitions = [['proceed', States.RED, States.YELLOW],
+               ['proceed', States.YELLOW, States.GREEN],
+               ['error', '*', States.ERROR]]
+
+m = Machine(states=States, transitions=transitions, initial=States.RED)
+assert m.is_RED()
+assert m.state is States.RED
+state = m.get_state(States.RED)  # get transitions.State object
+print(state.name)  # >>> RED
+m.proceed()
+m.proceed()
+assert m.is_GREEN()
+m.error()
+assert m.state is States.ERROR
+```
+
+You can mix enums and strings if you like (e.g. `[States.RED, 'ORANGE', States.YELLOW, States.GREEN]`) but note that internally, `transitions` will still handle states by name (`enum.Enum.name`).
+Thus, it is not possible to have the states `'GREEN'` and `States.GREEN` at the same time.
 
 ### <a name="transitions"></a>Transitions
 Some of the above examples already illustrate the use of transitions in passing, but here we'll explore them in more detail.
@@ -492,6 +543,14 @@ machine.add_ordered_transitions(['A', 'C', 'B'])
 machine.next_state()
 print(machine.state)
 >>> 'C'
+# Conditions can be passed to 'add_ordered_transitions' as well
+# If one condition is passed, it will be used for all transitions
+machine = Machine(states=states, initial='A')
+machine.add_ordered_transitions(conditions='check')
+# If a list is passed, it must contain exactly as many elements as the
+# machine contains states (A->B, ..., X->A)
+machine = Machine(states=states, initial='A')
+machine.add_ordered_transitions(conditions=['check_A2B', ..., 'check_X2A'])
 ```
 
 #### <a name="queued-transitions"></a>Queued transitions
@@ -616,9 +675,13 @@ class Matter(object):
     heat = False
     attempts = 0
     def count_attempts(self): self.attempts += 1
-    def is_really_hot(self): return self.heat
     def heat_up(self): self.heat = random.random() < 0.25
     def stats(self): print('It took you %i attempts to melt the lump!' %self.attempts)
+
+    @property
+    def is_really_hot(self):
+        return self.heat
+    
 
 states=['solid', 'liquid', 'gas', 'plasma']
 
@@ -685,16 +748,15 @@ print(lump.state)
 >>> initial
 ```
 
-### <a name="execution-order"></a>Callback resolution and execution order
+### <a name="resolution"></a>Callable resolution
 
-As you have probably already realized, the standard way of passing callbacks to states and transitions is by name.
-When processing callbacks, Transitions will use the name to retrieve the related callback from the model.
-If the method cannot be retrieved and it contains dots, Transitions will treat the name as a path to a module function and try to import it.
-Alternatively, you can pass callables such as (bound) functions directly.
+As you have probably already realized, the standard way of passing callables to states, conditions and transitions is by name. When processing callbacks and conditions, `transitions` will use their name to retrieve the related callable from the model. If the method cannot be retrieved and it contains dots, `transitions` will treat the name as a path to a module function and try to import it. Alternatively, you can pass names of properties or attributes. They will be wrapped into functions but cannot receive event data for obvious reasons. You can also pass callables such as (bound) functions directly. As mentioned earlier, you can also pass lists/tuples of callables names to the callback parameters. Callbacks will be executed in the order they were added.
 
 ```python
 from transitions import Machine
 from mod import imported_func
+
+import random
 
 
 class Model(object):
@@ -702,19 +764,39 @@ class Model(object):
     def a_callback(self):
         imported_func()
 
+    @property
+    def a_property(self):
+        """ Basically a coin toss. """
+        return random.random() < 0.5
+
+    an_attribute = False
+
 
 model = Model()
 machine = Machine(model=model, states=['A'], initial='A')
-machine.add_transition('by_name', 'A', 'A', after='a_callback')
-machine.add_transition('by_reference', 'A', 'A', after=model.a_callback)
+machine.add_transition('by_name', 'A', 'A', conditions='a_property', after='a_callback')
+machine.add_transition('by_reference', 'A', 'A', unless=['a_property', 'an_attribute'], after=model.a_callback)
 machine.add_transition('imported', 'A', 'A', after='mod.imported_func')
 
 model.by_name()
 model.by_reference()
 model.imported()
 ```
-The callback resolution is done in `Machine.resolve_callbacks`.
-This method can be overridden in case more complex callback resolution strategies are required.
+
+The callable resolution is done in `Machine.resolve_callable`.
+This method can be overridden in case more complex callable resolution strategies are required.
+
+
+**Example**
+```python
+class CustomMachine(Machine):
+    @staticmethod
+    def resolve_callable(func, event_data):
+        # manipulate arguments here and return func, or super() if no manipulation is done.
+        super(CustomMachine, CustomMachine).resolve_callable(func, event_data)
+```
+
+### <a name="execution-order"></a>Callback execution order
 
 In summary, callbacks on transitions are executed in the following order:
 
@@ -840,7 +922,7 @@ Here you get to consolidate all state machine functionality into your existing m
 
 A machine can handle multiple models which can be passed as a list like `Machine(model=[model1, model2, ...])`.
 In cases where you want to add models *as well as* the machine instance itself, you can pass the string placeholder `'self'` during initialization like `Machine(model=['self', model1, ...])`.
-You can also create a standalone machine, and register models dynamically via `machine.add_model`.
+You can also create a standalone machine, and register models dynamically via `machine.add_model` by passing `model=None` to the constructor.
 Remember to call `machine.remove_model` if machine is long-lasting and your models are temporary and should be garbage collected:
 
 ```python
@@ -850,7 +932,8 @@ class Matter():
 lump1 = Matter()
 lump2 = Matter()
 
-machine = Machine(states=states, transitions=transitions, initial='solid', add_self=False)
+# setting 'model' to None or passing an empty list will initialize the machine without a model
+machine = Machine(model=None, states=states, transitions=transitions, initial='solid')
 
 machine.add_model(lump1)
 machine.add_model(lump2, initial='liquid')
@@ -865,14 +948,30 @@ del lump1  # lump1 is garbage collected
 del lump2  # lump2 is garbage collected
 ```
 
-If you don't provide an initial state in the state machine constructor, you must provide one every time you add a model:
+If you don't provide an initial state in the state machine constructor, `transitions` will create and add a default state called `'initial'`.
+If you do not want a default initial state, you can pass `initial=None`.
+However, in this case you need to pass an initial state every time you add a model. 
 
 ```python
-machine = Machine(states=states, transitions=transitions, add_self=False)
+machine = Machine(model=None, states=states, transitions=transitions, initial=None)
 
 machine.add_model(Matter())
 >>> "MachineError: No initial state configured for machine, must specify when adding model."
 machine.add_model(Matter(), initial='liquid')
+```
+
+Models with multiple states could attach multiple machines using different `model_attribute` values:
+
+```python
+lump = Matter()
+
+lump.state
+>>> 'solid'
+lump.shipping_state
+>>> 'delivered'
+
+matter_machine = Machine(lump, model_attribute='state', **kwargs)
+shipment_machine = Machine(lump, model_attribute='shipping_state', **kwargs)
 ```
 
 ### Logging
@@ -923,9 +1022,11 @@ Even though the core of transitions is kept lightweight, there are a variety of 
 - **Diagrams** to visualize the current state of a machine
 - **Hierarchical State Machines** for nesting and reuse
 - **Threadsafe Locks** for parallel execution
+- **Async callbacks** for asynchronous execution
 - **Custom States** for extended state-related behaviour
 
-There are two mechanisms to retrieve a state machine instance with the desired features enabled. The first approach makes use of the convenience `factory` with the three parameters `graph`, `nested` and `locked` set to `True` if the certain feature is required:
+There are two mechanisms to retrieve a state machine instance with the desired features enabled.
+The first approach makes use of the convenience `factory` with the four parameters `graph`, `nested`, `locked` or `asyncio` set to `True` if the feature is required:
 
 ```python
 from transitions.extensions import MachineFactory
@@ -933,32 +1034,37 @@ from transitions.extensions import MachineFactory
 # create a machine with mixins
 diagram_cls = MachineFactory.get_predefined(graph=True)
 nested_locked_cls = MachineFactory.get_predefined(nested=True, locked=True)
+async_machine_cls = MachineFactory.get_predefined(asyncio=True)
 
 # create instances from these classes
 # instances can be used like simple machines
-machine1 = diagram_cls(model, state, transitions...)
+machine1 = diagram_cls(model, state, transitions)
 machine2 = nested_locked_cls(model, state, transitions)
 ```
 
-This approach targets experimental use since in this case the underlying classes do not have to be known. However, classes can also be directly imported from `transitions.extensions`. The naming scheme is as follows:
+This approach targets experimental use since in this case the underlying classes do not have to be known.
+However, classes can also be directly imported from `transitions.extensions`. The naming scheme is as follows:
 
-|                                | Diagrams | Nested | Locked |
-| -----------------------------: | :------: | :----: | :----: |
-| Machine                        | ✘        | ✘      | ✘      |
-| GraphMachine                   | ✓        | ✘      | ✘      |
-| HierarchicalMachine            | ✘        | ✓      | ✘      |
-| LockedMachine                  | ✘        | ✘      | ✓      |
-| HierarchicalGraphMachine       | ✓        | ✓      | ✘      |
-| LockedGraphMachine             | ✓        | ✘      | ✓      |
-| LockedHierarchicalMachine      | ✘        | ✓      | ✓      |
-| LockedHierarchicalGraphMachine | ✓        | ✓      | ✓      |
+|                                | Diagrams | Nested | Locked | Asyncio |
+| -----------------------------: | :------: | :----: | :----: | :---: |
+| Machine                        | ✘        | ✘      | ✘      | ✘ |
+| GraphMachine                   | ✓        | ✘      | ✘      | ✘ |
+| HierarchicalMachine            | ✘        | ✓      | ✘      | ✘ |
+| LockedMachine                  | ✘        | ✘      | ✓      | ✘ |
+| HierarchicalGraphMachine       | ✓        | ✓      | ✘      | ✘ |
+| LockedGraphMachine             | ✓        | ✘      | ✓      | ✘ |
+| LockedHierarchicalMachine      | ✘        | ✓      | ✓      | ✘ |
+| LockedHierarchicalGraphMachine | ✓        | ✓      | ✓      | ✘ |
+| AsyncMachine                   | ✘        | ✘      | ✘      | ✓ |
+| AsyncGraphMachine              | ✓        | ✘      | ✘      | ✓ |   
+| AsyncHierarchicalMachine       | ✘        | ✓      | ✘      | ✓ |   
+| AsyncHierarchicalGraphMachine  | ✓        | ✓      | ✘      | ✓ | 
 
-To use a full featured state machine, one could write:
+To use a feature-rich state machine, one could write:
 
 ```python
 from transitions.extensions import LockedHierarchicalGraphMachine as Machine
 
-#enable ALL the features!
 machine = Machine(model, states, transitions)
 ```
 
@@ -968,38 +1074,56 @@ Additional Keywords:
 * `title` (optional): Sets the title of the generated image.
 * `show_conditions` (default False): Shows conditions at transition edges
 * `show_auto_transitions` (default False): Shows auto transitions in graph
+* `show_state_attributes` (default False): Show callbacks (enter, exit), tags and timeouts in graph
 
-Transitions can generate basic state diagrams displaying all valid transitions between states. To use the graphing functionality, you'll need to have `pygraphviz` installed:
- 
-    pip install pygraphviz  # install pygraphviz manually...
-    pip install transitions[diagrams]  # ... or install transitions with 'diagrams' extras
-    
-With `GraphMachine` enabled, a PyGraphviz `AGraph` object is generated during machine initialization and is constantly updated when the machine state changes:
+Transitions can generate basic state diagrams displaying all valid transitions between states. To use the graphing functionality, you'll need to have `graphviz` and/or `pygraphviz` installed:   
+To generate graphs with the package `graphviz`, you need to install [Graphviz](https://graphviz.org/) manually or via a package manager.
+
+    sudo apt-get install graphviz  # Ubuntu and Debian
+    brew install graphviz  # MacOS
+    conda install graphviz python-graphviz  # (Ana)conda
+
+Now you can install the actual Python packages
+
+    pip install graphviz pygraphviz # install graphviz and/or pygraphviz manually...
+    pip install transitions[diagrams]  # ... or install transitions with 'diagrams' extras which currently depends on pygraphviz
+
+Currently, `GraphMachine` will use `pygraphviz` when available and fall back to `graphviz` when `pygraphviz` cannot be 
+found. This can be overridden by passing `use_pygraphviz=False` to the constructor. Note that this default might change 
+in the future and `pygraphviz` support may be dropped.
+With `Model.get_graph()` you can get the current graph or the region of interest (roi) and draw it like this:
 
 ```python
+# import transitions
+
 from transitions.extensions import GraphMachine as Machine
 m = Model()
+# without further arguments pygraphviz will be used
 machine = Machine(model=m, ...)
+# when you want to use graphviz explicitely
+machine = Machine(model=m, use_pygraphviz=False, ...)
 # in cases where auto transitions should be visible
-# Machine(model=m, show_auto_transitions=True, ...)
+machine = Machine(model=m, show_auto_transitions=True, ...)
 
 # draw the whole graph ...
 m.get_graph().draw('my_state_diagram.png', prog='dot')
 # ... or just the region of interest
 # (previous state, active state and all reachable states)
-m.get_graph(show_roi=True).draw('my_state_diagram.png', prog='dot')
+roi = m.get_graph(show_roi=True).draw('my_state_diagram.png', prog='dot')
 ```
 
 This produces something like this:
 
-![state diagram example](https://cloud.githubusercontent.com/assets/19777/11530591/1a0c08a6-98f6-11e5-88a7-756585aafbbb.png)
+![state diagram example](https://user-images.githubusercontent.com/205986/47524268-725c1280-d89a-11e8-812b-1d3b6e667b91.png)
 
 Also, have a look at our [example](./examples) IPython/Jupyter notebooks for a more detailed example.
 
 ### <a name="hsm"></a>Hierarchical State Machine (HSM)
 
-Transitions includes an extension module which allows to nest states. This allows to create contexts and to model cases where states are related to certain subtasks in the state machine. To create a nested state, either import `NestedState` from transitions or use a dictionary with the initialization arguments `name` and `children`. Optionally, `initial` can be used to define a sub state to transit to, when the nested state
- is entered.
+Transitions includes an extension module which allows to nest states.
+This allows to create contexts and to model cases where states are related to certain subtasks in the state machine.
+To create a nested state, either import `NestedState` from transitions or use a dictionary with the initialization arguments `name` and `children`.
+Optionally, `initial` can be used to define a sub state to transit to, when the nested state is entered.
 
 ```python
 from transitions.extensions import HierarchicalMachine as Machine
@@ -1049,9 +1173,30 @@ transitions = [
 # ...
 ```
 
-Some things that have to be considered when working with nested states: State *names are concatenated* with `NestedState.separator`. Currently the separator is set to underscore ('_') and therefore behaves similar to the basic machine. This means a substate `bar` from state `foo` will be known by `foo_bar`. A substate `baz` of `bar` will be referred to as `foo_bar_baz` and so on. When entering a substate, `enter` will be called for all parent states. The same is true for exiting substates. Third, nested states can overwrite transition behaviour of their parents. If a transition is not known to the current state it will be delegated to its parent.
+Note that your previously created state object *must be* a `NestedState` or a derived class of it.
+The standard `State` class used in simple `Machine` instances lacks features required for nesting.
 
-In some cases underscore as a separator is not sufficient. For instance if state names consists of more than one word and a concatenated naming such as `state_A_name_state_C` would be confusing. Setting the separator to something else than underscore changes some of the behaviour (auto_transition and setting callbacks). You can even use unicode characters if you use python 3:
+```python
+from transitions.extensions.nesting import HierarchicalMachine, NestedState
+from transitions import  State
+m = HierarchicalMachine(states=['A'], initial='initial')
+m.add_state('B')  # fine
+m.add_state({'name': 'C'})  # also fine
+m.add_state(NestedState('D'))  # fine as well
+m.add_state(State('E'))  # does not work!
+``` 
+
+Some things that have to be considered when working with nested states: State *names are concatenated* with `NestedState.separator`.
+Currently the separator is set to underscore ('_') and therefore behaves similar to the basic machine.
+This means a substate `bar` from state `foo` will be known by `foo_bar`. A substate `baz` of `bar` will be referred to as `foo_bar_baz` and so on.
+When entering a substate, `enter` will be called for all parent states. The same is true for exiting substates.
+Third, nested states can overwrite transition behaviour of their parents.
+If a transition is not known to the current state it will be delegated to its parent.
+
+In some cases underscore as a separator is not sufficient.
+For instance if state names consists of more than one word and a concatenated naming such as `state_A_name_state_C` would be confusing.
+Setting the separator to something else than underscore changes some of the behaviour (auto_transition and setting callbacks).
+You can even use unicode characters if you use python 3:
 
 ```python
 from transitions.extensions.nesting import NestedState
@@ -1084,7 +1229,7 @@ machine.state
 # s.on_enter('C↦3↦a', 'callback_method')
 ```
 
-Instead of `to_C_3_a()` auto transition is called as `to_C.s3.a()`. If your substate starts with a digit, transitions adds a prefix 's' ('3' becomes 's3') to the auto transition `FunctionWrapper` to comply with the attribute naming scheme of python.
+Instead of `to_C_3_a()` auto transition is called as `to_C.s3.a()`. If your substate starts with a digit, transitions adds a prefix 's' ('3' becomes 's3') to the auto transition `FunctionWrapper` to comply with the attribute naming scheme of Python.
 If interactive completion is not required, `to('C↦3↦a')` can be called directly. Additionally, `on_enter/exit_<<state name>>` is replaced with `on_enter/exit(state_name, callback)`.
 
 To check whether the current state is a substate of a specific state `is_state` supports the keyword `allow_substates`:
@@ -1098,9 +1243,79 @@ machine.is_C(allow_substates=True)
 >>> True
 ```
 
+*new in 0.8.0*  
+You can use enumerations in HSMs as well but keep in mind that `Enum` are compared by value.
+If you have a value more than once in a state tree those states cannot be distinguished.
+
+```python
+states = [States.RED, States.YELLOW, {'name': States.GREEN, 'children': ['tick', 'tock']}]
+states = ['A', {'name': 'B', 'children': States, 'initial': States.GREEN}, States.GREEN]
+machine = HierarchicalMachine(states=states)
+machine.to_B()
+machine.is_GREEN()  # returns True even though the actual state is B_GREEN
+```
+
+*new in 0.8.0*  
+`HierarchicalMachine` has been rewritten from scratch to support parallel states and better isolation of nested states.
+This involves some tweaks based on community feedback.
+To get an idea of processing order and configuration have a look at the following example:
+
+```python
+from transitions.extensions.nesting import HierarchicalMachine
+import logging
+states = ['A', 'B', {'name': 'C', 'parallel': [{'name': '1', 'children': ['a', 'b', 'c'], 'initial': 'a',
+                                                'transitions': [['go', 'a', 'b']]},
+                                               {'name': '2', 'children': ['x', 'y', 'z'], 'initial': 'z'}],
+                      'transitions': [['go', '2_z', '2_x']]}]
+
+transitions = [['reset', 'C_1_b', 'B']]
+logging.basicConfig(level=logging.INFO)
+machine = HierarchicalMachine(states=states, transitions=transitions, initial='A')
+machine.to_C()
+# INFO:transitions.extensions.nesting:Exited state A
+# INFO:transitions.extensions.nesting:Entered state C
+# INFO:transitions.extensions.nesting:Entered state C_1
+# INFO:transitions.extensions.nesting:Entered state C_2
+# INFO:transitions.extensions.nesting:Entered state C_1_a
+# INFO:transitions.extensions.nesting:Entered state C_2_z
+machine.go()
+# INFO:transitions.extensions.nesting:Exited state C_1_a
+# INFO:transitions.extensions.nesting:Entered state C_1_b
+# INFO:transitions.extensions.nesting:Exited state C_2_z
+# INFO:transitions.extensions.nesting:Entered state C_2_x
+machine.reset()
+# INFO:transitions.extensions.nesting:Exited state C_1_b
+# INFO:transitions.extensions.nesting:Exited state C_2_x
+# INFO:transitions.extensions.nesting:Exited state C_1
+# INFO:transitions.extensions.nesting:Exited state C_2
+# INFO:transitions.extensions.nesting:Exited state C
+# INFO:transitions.extensions.nesting:Entered state B
+```
+
+When using `parallel` instead of `children`, `transitions` will enter all states of the passed list at the same time.
+Which substate to enter is defined by `initial` which should *always* point to a direct substate.
+A novel feature is to define local transitions by passing the `transitions` keyword in a state definition.
+The above defined transition `['go', 'a', 'b']` is only valid in `C_1`.
+While you can reference substates as done in `['go', '2_z', '2_x']` you cannot reference parent states directly in locally defined transitions.
+When a parent state is exited, its children will also be exited.
+In addition to the processing order of transitions known from `Machine` where transitions are considered in the order they were added, `HierarchicalMachine` considers hierarchy as well.
+Transitions defined in substates will be evaluated first (e.g. `C_1_a` is left before `C_2_z`) and transitions defined with wildcard `*` will (for now) only add transitions to root states (in this example `A`, `B`, `C`)
+Starting with *0.8.0* nested states can be added directly and will issue the creation of parent states on-the-fly:
+
+```python
+m = HierarchicalMachine(states=['A'], initial='A')
+m.add_state('B_1_a')
+m.to_B_1()
+assert m.is_B(allow_substates=True)
+```
+
+
 #### Reuse of previously created HSMs
 
-Besides semantic order, nested states are very handy if you want to specify state machines for specific tasks and plan to reuse them. Be aware that this will *embed* the passed machine's states. This means if your states had been altered *before*, this change will be persistent. 
+Besides semantic order, nested states are very handy if you want to specify state machines for specific tasks and plan to reuse them.
+Before *0.8.0*, a `HierarchicalMachine` would not integrate the machine instance itself but the states and transitions by creating copies of them.
+However, since *0.8.0* states are just **referenced** which means changes in one machine's states will influence the other instance.
+Note that events and transitions are also copied by reference and will be shared by both instances if you do not use the `remap` keyword.
 
 ```python
 count_states = ['1', '2', '3', 'done']
@@ -1133,9 +1348,14 @@ collector.done()  # collector.state == counting_done
 collector.wait()  # collector.state == waiting
 ```
 
-If a `HierarchicalStateMachine` is passed with the `children` keyword, the initial state of this machine will be assigned to the new parent state. In the above example we see that entering `counting` will also enter `counting_1`. If this is undesired behaviour and the machine should rather halt in the parent state, the user can pass `initial` as `False` like `{'name': 'counting', 'children': counter, 'initial': False}`.
+If a `HierarchicalMachine` is passed with the `children` keyword, the initial state of this machine will be assigned to the new parent state.
+In the above example we see that entering `counting` will also enter `counting_1`.
+If this is undesired behaviour and the machine should rather halt in the parent state, the user can pass `initial` as `False` like `{'name': 'counting', 'children': counter, 'initial': False}`.
 
-Sometimes you want such an embedded state collection to 'return' which means after it is done it should exit and transit to one of your states. To achieve this behaviour you can remap state transitions. In the example above we would like the counter to return if the state `done` was reached. This is done as follows:
+Sometimes you want such an embedded state collection to 'return' which means after it is done it should exit and transit to one of your super states.
+To achieve this behaviour you can remap state transitions.
+In the example above we would like the counter to return if the state `done` was reached.
+This is done as follows:
 
 ```python
 states = ['waiting', 'collecting', {'name': 'counting', 'children': counter, 'remap': {'done': 'waiting'}}]
@@ -1148,13 +1368,15 @@ collector.state
 >>> 'waiting' # be aware that 'counting_done' will be removed from the state machine
 ```
 
-If a reused state machine does not have a final state, you can of course add the transitions manually. If 'counter' had no 'done' state, we could just add `['done', 'counter_3', 'waiting']` to achieve the same behaviour.
+As mentioned above, using `remap` will **copy** events and transitions since they could not be valid in the original state machine.
+If a reused state machine does not have a final state, you can of course add the transitions manually.
+If 'counter' had no 'done' state, we could just add `['done', 'counter_3', 'waiting']` to achieve the same behaviour.
 
-Note that the `HierarchicalMachine` will not integrate the machine instance itself but the states and transitions by creating copies of them. This way you are able to continue using your previously created instance without interfering with the embedded version.
 
 #### <a name="threading"></a> Threadsafe(-ish) State Machine
 
-In cases where event dispatching is done in threads, one can use either `LockedMachine` or `LockedHierarchicalMachine` where **function access** (!sic) is secured with reentrant locks. This does not save you from corrupting your machine by tinkering with member variables of your model or state machine.
+In cases where event dispatching is done in threads, one can use either `LockedMachine` or `LockedHierarchicalMachine` where **function access** (!sic) is secured with reentrant locks.
+This does not save you from corrupting your machine by tinkering with member variables of your model or state machine.
 
 ```python
 from transitions.extensions import LockedMachine as Machine
@@ -1192,7 +1414,7 @@ machine = Machine(states=states, initial='A', machine_context=[lock1, lock2])
 Any contexts via `machine_model` will be shared between all models registered with the `Machine`.
 Per-model contexts can be added as well:
 
-```
+```python
 lock3 = RLock()
 
 machine.add_model(model, model_context=lock3)
@@ -1200,6 +1422,95 @@ machine.add_model(model, model_context=lock3)
 
 It's important that all user-provided context managers are re-entrant since the state machine will call them multiple
 times, even in the context of a single trigger invocation.
+
+
+#### <a name="async"></a> Using async callbacks
+
+If you are using Python 3.7 or later, you can use `AsyncMachine` to work with asynchronous callbacks.
+You can mix synchronous and asynchronous callbacks if you like but this may have undesired side effects.
+Note that events need to be awaited and the event loop must also be handled by you.
+
+```python
+from transitions.extensions.asyncio import AsyncMachine
+import asyncio
+import time
+
+
+class AsyncModel:
+
+    def prepare_model(self):
+        print("I am synchronous.")
+        self.start_time = time.time()
+
+    async def before_change(self):
+        print("I am asynchronous and will block now for 100 milliseconds.")
+        await asyncio.sleep(0.1)
+        print("I am done waiting.")
+
+    def sync_before_change(self):
+        print("I am synchronous and will block the event loop (what I probably shouldn't)")
+        time.sleep(0.1)
+        print("I am done waiting synchronously.")
+
+    def after_change(self):
+        print(f"I am synchronous again. Execution took {int((time.time() - self.start_time) * 1000)} ms.")
+
+
+transition = dict(trigger="start", source="Start", dest="Done", prepare="prepare_model",
+                  before=["before_change"] * 5 + ["sync_before_change"],
+                  after="after_change")  # execute before function in asynchronously 5 times
+model = AsyncModel()
+machine = AsyncMachine(model, states=["Start", "Done"], transitions=[transition], initial='Start')
+
+asyncio.get_event_loop().run_until_complete(model.start())
+# >>> I am synchronous.
+#     I am asynchronous and will block now for 100 milliseconds.
+#     I am asynchronous and will block now for 100 milliseconds.
+#     I am asynchronous and will block now for 100 milliseconds.
+#     I am asynchronous and will block now for 100 milliseconds.
+#     I am asynchronous and will block now for 100 milliseconds.
+#     I am synchronous and will block the event loop (what I probably shouldn't)
+#     I am done waiting synchronously.
+#     I am done waiting.
+#     I am done waiting.
+#     I am done waiting.
+#     I am done waiting.
+#     I am done waiting.
+#     I am synchronous again. Execution took 101 ms.
+assert model.is_Done()
+```
+
+So, why do you need to use Python 3.7 or later you may ask.
+Async support has been introduced earlier.
+`AsyncMachine` makes use of `contextvars` to handle running callbacks when new events arrive before a transition
+has been finished:
+
+```python
+async def await_never_return():
+    await asyncio.sleep(100)
+    raise ValueError("That took too long!")
+
+async def fix():
+    await m2.fix()
+
+m1 = AsyncMachine(states=['A', 'B', 'C'], initial='A', name="m1")
+m2 = AsyncMachine(states=['A', 'B', 'C'], initial='A', name="m2")
+m2.add_transition(trigger='go', source='A', dest='B', before=await_never_return)
+m2.add_transition(trigger='fix', source='A', dest='C')
+m1.add_transition(trigger='go', source='A', dest='B', after='go')
+m1.add_transition(trigger='go', source='B', dest='C', after=fix)
+asyncio.get_event_loop().run_until_complete(asyncio.gather(m2.go(), m1.go()))
+
+assert m1.state == m2.state
+```
+
+This example illustrates actually two things:
+First, that 'go' called in m1's transition from `A` to be `B` is not cancelled and second, calling `m2.fix()` will
+halt the transition attempt of m2 from `A` to `B` by executing 'fix' from `A` to `C`.
+This separation would not be possible without `contextvars`.
+Note that `prepare` and `conditions` are NOT treated as ongoing transitions.
+This means that after `conditions` have been evaluated, a transition is executed even though another event already happened.
+Tasks will only be cancelled when run as a `before` callback or later.
 
 #### <a name="state-features"></a>Adding features to states
 
@@ -1272,7 +1583,7 @@ Currently, transitions comes equipped with the following state features:
     - keyword: `hook` (string, default='scope') -- The model's attribute name fore the temporal object.
 
 You can write your own `State` extensions and add them the same way. Just note that `add_state_features` expects *Mixins*. This means your extension should always call the overridden methods `__init__`, `enter` and `exit`. Your extension may inherit from *State* but will also work without it.
-In case you prefer to write your own custom states from scratch be aware that some state extensions *require* certain state features. `HierarchicalStateMachine` requires your custom state to be an instance of `NestedState` (`State` is not sufficient). To inject your states you can either assign them to your `Machine`'s class attribute `state_cls` or override `Machine.create_state` in case you need some specific procedures done whenever a state is created:
+In case you prefer to write your own custom states from scratch be aware that some state extensions *require* certain state features. `HierarchicalMachine` requires your custom state to be an instance of `NestedState` (`State` is not sufficient). To inject your states you can either assign them to your `Machine`'s class attribute `state_cls` or override `Machine.create_state` in case you need some specific procedures done whenever a state is created:
 
 ```python
 from transitions import Machine, State
@@ -1294,6 +1605,11 @@ class VerboseMachine(Machine):
         return MyState(*args, **kwargs)
 
 ```
+
+#### <a name="django-support"></a> Using transitions together with Django
+
+Christian Ledermann developed `django-transitions`, a module dedicated to streamline the work with `transitions` and Django. The source code is also hosted on [Github](https://github.com/PrimarySite/django-transitions). Have a look at [the documentation](https://django-transitions.readthedocs.io/en/latest/) for usage examples.
+
 
 ### <a name="bug-reports"></a>I have a [bug report/issue/question]...
 For bug reports and other issues, please open an issue on GitHub.

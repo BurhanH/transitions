@@ -1,18 +1,19 @@
-dist: xenial
 language: python
+cache: pip
 python:
   - "2.7"
   - "3.5"
   - "3.6"
   - "3.7"
+  - "3.8"
 install:
-  - pip install python-coveralls coverage
+  - pip install python-coveralls 'coverage<5'
   - pip install -r requirements.txt
   - pip install -r requirements_diagrams.txt
-  - pip install -r requirements_test.txt
-script:  nosetests --with-coverage --with-doctest
+  - pip install -U -r requirements_test.txt
+script: pytest -nauto --doctest-modules --cov transitions/
 after_success:
-  - coveralls --config_file .coveragerc
+  - coveralls --ignore-errors --config_file .coveragerc
 addons:
   apt:
     packages:
